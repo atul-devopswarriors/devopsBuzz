@@ -74,7 +74,7 @@
   register: remove_cluster
   ignore_errors: yes
 
-- name: Deleting toker_op file
+- name: Deleting token_op file
   file:
      state: absent
      path: /tmp/token_op
