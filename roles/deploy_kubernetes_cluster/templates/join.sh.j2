@@ -1,0 +1,1 @@
+kubeadm join {{ cluster_setup['api_address'] }}:{{ cluster_setup['api_port'] }} --token {{ only_token.stdout_lines[0] }} --discovery-token-ca-cert-hash sha256:{{ only_token.stdout_lines[1] }} --ignore-preflight-errors=all

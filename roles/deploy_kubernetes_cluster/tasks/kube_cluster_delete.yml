@@ -1,0 +1,99 @@
+---
+- name: Removing Cluster 
+  shell: "kubeadm reset -f --ignore-preflight-errors=all"
+  delegate_to: "{{ groups['kube_master'][0] | string }}" 
+  tags:    
+    - delete_cluster
+  when:
+    - "ansible_nodename == '{{ groups['kube_master'][0] }}'" 
+    - kube_cluster_remove | bool
+
+- name: Capturing mount point On Node1
+  shell: df -TH | awk '/{{ item }}/ {print $7}'
+  register: capture_mount_node1
+  delegate_to: "{{ groups['kube_nodes'][0]|string }}"
+  tags:
+    - delete_cluster
+  loop:
+    - "run"
+    - "var"
+
+- name: Capturing mount point On Node2
+  shell: df -TH | awk '/{{ item }}/ {print $7}'
+  register: capture_mount_node2
+  delegate_to: "{{ groups['kube_nodes'][1]|string }}"
+  tags:
+    - delete_cluster
+  loop:
+    - "run"
+    - "var"
+
+- name: Priting Mount Points node1
+  debug: 
+    var: "{{ item }}"
+  loop:
+    - "{{ capture_mount_node1.results.1.stdout_lines }}"
+  tags:
+    - delete_cluster
+
+- name: Priting Mount Points node2
+  debug: var=capture_mount_node2.results.1.stdout_lines
+  tags:
+    - delete_cluster
+
+- name: Deleting mount point on Node1 to release cluster
+  ansible.posix.mount:
+    path: "{{ item }}"
+    state: unmounted
+  delegate_to: "{{ groups['kube_nodes'][0]|string }}"
+  loop: "{{ capture_mount_node1.results.1.stdout_lines }}"
+  delegate_facts: true
+  tags:
+    - delete_cluster
+  ignore_errors: yes
+
+- name: Deleting mount point on Node2 to release cluster
+  ansible.posix.mount:
+    path: "{{ item }}"
+    state: absent
+  delegate_to: "{{ groups['kube_nodes'][1]|string }}"
+  loop: "{{ capture_mount_node2.results.1.stdout_lines }}"
+  tags:
+    - delete_cluster
+  delegate_facts: true
+  ignore_errors: yes
+
+- name: Deleting Files From Master & Worker Nodes
+  shell: "rm -rf {{ item }}"
+  loop:
+    - "$HOME/.kube"
+    - "/etc/kubernetes"
+    - "/var/lib/kubelet"
+  tags:
+    - delete_cluster
+  register: remove_cluster
+  ignore_errors: yes
+
+- name: Deleting toker_op file
+  file:
+     state: absent
+     path: /tmp/token_op
+     force: yes
+  delegate_to: "{{ item }}"
+  loop:
+    - "{{ groups['kube_nodes'][0]|string }}"
+    - "{{ groups['kube_nodes'][1]|string }}"  
+  tags:
+    - delete_cluster
+
+- name: Removing Packages 
+  yum:
+    name: "{{ packages }}"
+    state: absent 
+  vars:
+    packages:
+      - "kubeadm"
+      - "kubelet"
+      - "docker"
+  tags:
+    - delete_cluster

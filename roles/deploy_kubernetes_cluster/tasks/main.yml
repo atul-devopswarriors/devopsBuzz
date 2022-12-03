@@ -1,0 +1,13 @@
+- name: Creating Kubernetes Setup
+  import_tasks: prerequisite.yml
+  when: clean_install is defined | bool
+
+- name: Deploying Kubernetes Cluster 
+  import_tasks: setup_k8s_cluster.yml
+  when:
+    - clean_install | bool 
+    - deploy_cluster | bool
+
+- name: Delete Kube8 Cluster Setup
+  import_tasks: kube_cluster_delete.yml
+  when: kube_cluster_remove | bool

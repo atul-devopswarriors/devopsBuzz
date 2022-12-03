@@ -1,0 +1,19 @@
+---
+- name: starting services
+  systemd:
+    name: "{{ item }}"
+    state: restarted
+    enabled: yes
+  loop:
+    - docker 
+    - kubelet 
+
+- name: Stopping Services
+  systemd:
+    name: "{{ item }}"
+    state: stopped
+    enabled: yes
+  loop:
+    - docker
+    - kubelet
+

@@ -1,0 +1,20 @@
+[all:vars]
+ansible_user= #Provide ssh username
+ansible_become=yes
+ansible_become_method=sudo
+ansible_become_user=root
+gather_facts=true
+
+[all:children]
+kube_master
+kube_nodes
+
+[local]
+localhost ansible_connection=local
+
+[kube_master]
+kmaster 
+
+[kube_nodes]
+node1 
+node2 

@@ -1,0 +1,4 @@
+---
+# This yaml will used for defining the kubernetes master variable used in playbook.
+kube_pki_path: "/etc/kubernetes/pki"
+pod_network: "https://docs.projectcalico.org/v3.4/getting-started/kubernetes/installation/hosted/calico.yaml"

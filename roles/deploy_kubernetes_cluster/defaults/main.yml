@@ -1,0 +1,34 @@
+---
+gpg_keys:
+  - "https://packages.cloud.google.com/yum/doc/yum-key.gpg https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg"
+base_urls:
+  - "https://packages.cloud.google.com/yum/repos/kubernetes-el7-{{ ansible_architecture }}"
+docker_dep: "https://download.docker.com/linux/centos/7/x86_64/stable/Packages/containerd.io-1.2.6-3.3.el7.x86_64.rpm"
+ 
+### CNI Network Information ###
+
+calico_cni_version: "v3.24.5"
+cni_network:
+  - "https://raw.githubusercontent.com/projectcalico/calico/{{ calico_cni_version }}/manifests/calico.yaml"
+  - "kubectl apply -f calico.yaml"
+
+
+cluster_setup:
+   api_fqnd: ""
+   api_address: ""
+   pod_network: "10.10.10.0/24"
+   api_port: 6443
+
+ansible_distribution_major_version: 7
+cluster_user: ""
+clean_install: True
+deploy_cluster: True
+
+remove_files:
+   - "$HOME/.kube"
+   - "/etc/kubernetes"
+   - "/var/lib/kubelet"
+
+cluser_nodes:
+  - "{{ groups['kube_master'] }}"
+  - "{{ groups['kube_nodes'] }}"

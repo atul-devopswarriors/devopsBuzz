@@ -1,0 +1,155 @@
+---
+- name: Importing Cluster Pre Requisite Playbook
+  import_tasks: prerequisite.yml
+  tags:
+    - deploy_cluster
+    - clean_install 
+
+- name: Initialize the Kubernetes cluster using kubeadm
+  shell: kubeadm init --apiserver-advertise-address={{ cluster_setup['api_address'] }} --apiserver-cert-extra-sans={{ cluster_setup['api_fqnd'] }} --ignore-preflight-errors=all
+  delegate_to: "{{ groups['kube_master'][0]|string }}" 
+  run_once: true
+  register: cluster_status
+  tags: 
+    - deploy_cluster
+    - clean_install
+
+- name: Checking cluster_status variable output
+  debug: var=cluster_status
+  tags: 
+    - deploy_cluster
+    - clean_install
+
+- name: Configuring Cluster Workspace
+  shell: "{{ item }}" 
+  loop:
+    - "mkdir -p $HOME/.kube"
+    - "cp /etc/kubernetes/admin.conf $HOME/.kube/config"
+    - "chown {{ cluster_user }}:{{ cluster_user }}  $HOME/.kube/config"
+  delegate_to: "{{ groups['kube_master'][0]|string }}"
+  tags: 
+    - deploy_cluster
+    - clean_install
+
+-  name: Generate join shell
+   shell: "kubeadm token create --print-join-command"
+   register: join_shell
+   delegate_to: "{{ groups['kube_master'][0]|string }}"
+   run_once: true
+   tags:
+     - deploy_cluster
+     - join_cluster
+     - clean_install
+
+-  name: Redirecting Token And Hash To File
+   shell: | 
+       rm -rf /tmp/token_op
+       echo {{ join_shell.stdout_lines[0] }}>>/tmp/token_op
+   tags:
+     - deploy_cluster
+     - join_cluster
+     - clean_install
+
+-  name: Fetchihg Join Token And Hash
+   shell: |
+     awk '{print $5}' /tmp/token_op
+     openssl x509 -pubkey -in {{ kube_pki_path }}/ca.crt | openssl rsa -pubin -outform der 2>/dev/null | openssl dgst -sha256 -hex | sed 's/^.* //'
+   register: only_token
+   delegate_to: "{{ groups['kube_master'][0]|string }}"
+   tags:
+     - deploy_cluster
+     - join_cluster
+     - clean_install
+
+- debug: msg="Value of item is {{item}}"
+  loop: "{{ only_token.stdout_lines }}"
+  delegate_to: "{{ groups['kube_master'][0]|string }}"
+  tags:
+    - deploy_cluster
+    - clean_install
+    - join_cluster
+
+- name: Moving Join Script To Kubernetes Nodes
+  template:
+      src: join.sh.j2
+      dest: /tmp/join.sh
+      mode: 0661
+      force: yes
+  delegate_to: "{{item|string}}"
+  loop: "{{ groups['kube_nodes'] }}"
+  tags:
+    - deploy_cluster
+    - clean_install
+    - join_cluster
+
+- shell: cat /tmp/join.sh
+  tags:
+    - deploy_cluster
+    - clean_install
+  delegate_to: "{{item|string}}"
+  loop: "{{ groups['kube_nodes'] }}"
+  tags:
+    - deploy_cluster
+    - clean_install
+
+-  name:  Join the node to cluster
+   shell: |
+       sh /tmp/join.sh
+   delegate_to: "{{ item | string }}"
+   loop: "{{ groups['kube_nodes'] }}" 
+   tags:
+     - deploy_cluster
+     - join_cluster
+     - clean_install
+
+- name: Downloading Calico CNI Network
+  ansible.builtin.get_url:
+    url: "{{ cni_network[0] }}"
+    dest: "/root/calico.yaml"
+    mode: "0440"
+    force: true
+  tags:
+    - deploy_cluster
+    - deploy_network
+    - clean_install
+
+-  name: Install calico pod network
+   shell: "{{ cni_network[1] }}"
+   delegate_to: "{{ groups['kube_master'][0]|string }}"
+   run_once: true
+   args:
+     chdir: /root
+   tags: 
+     - deploy_cluster
+     - deploy_network
+     - clean_install
+
+-  name: Verifying Cluster Status 
+   shell: kubectl get nodes -o wide
+   delegate_to: "{{ groups['kube_master'][0]|string }}"
+   run_once: true
+   register: node_status
+   tags:
+     - deploy_cluster
+     - join_cluster
+     - node_cluster
+     - clean_install
+     - cluster_status
+
+- name: Printing Node Ststus
+  debug: var=node_status.stdout_lines 
+  delegate_to: "{{ groups['kube_master'][0]|string }}"
+  tags:
+    - deploy_cluster
+    - join_cluster
+    - clean_install
+    - node_cluster
+    - cluster_status
+
+- name: Printing Cluster Status Lastly
+  debug: var=item
+  loop:
+     - "kubectl get nodes"
+  tags:
+     - clean_install
+     - cluster_status

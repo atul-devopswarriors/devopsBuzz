@@ -1,0 +1,6 @@
+---
+- hosts: kube_master,kube_nodes
+ 
+  roles:
+  - {role: deploy_kubernetes_cluster, tags: [deploy_kubernetes_cluster]}
+ 

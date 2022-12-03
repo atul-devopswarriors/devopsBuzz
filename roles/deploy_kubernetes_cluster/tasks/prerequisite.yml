@@ -1,0 +1,137 @@
+---
+  - name: Checking Key Less Authentication Configure Or Not
+    shell: |
+        ls -l ~/.ssh/ | awk -e  '/(\w+)\_(\w+)/{print $9}'
+    delegate_to: "{{ groups['kube_master'][0]|string }}"
+    register: ssh_key
+    tags: clean_install
+    when: 
+       - "'kube_master' in groups"
+
+  - name: Printing ssh_key Just In Case
+    debug: var=ssh_key.stdout_lines|length|int
+    tags: clean_install
+
+  - name: Creating .ssh path if keys not created
+    file: 
+      path: ~/.ssh
+      state: directory
+      mode: 0755
+      owner: root
+      group: root
+    when:
+      - not ansible_check_mode
+      - "'id_rsa' not in ssh_key.stdout_lines"
+    run_once: true
+    tags: clean_install
+   
+  - name: Creating Ssh Key If Its Not Created On Kube Master Node
+    openssh_keypair:
+       path: ~/.ssh/id_rsa
+    delegate_to: "{{ groups['kube_master'][0]|string }}"
+    when:
+      - not ansible_check_mode
+      - "'id_rsa' not in ssh_key.stdout_lines"
+    run_once: true 
+    tags: clean_install
+  
+  - name: Copying Ssh-Keypair To Nodes
+    authorized_key: 
+      user: "{{ cluster_user }}"
+      key: "{{ lookup('file', '~/.ssh/id_rsa.pub') }}"
+      state: present
+    delegate_to: "{{ item }}"
+    loop: "{{ groups['kube_nodes'] }}"
+    tags: clean_install
+    when:
+      - not ansible_check_mode
+      - "'id_rsa' not in ssh_key.stdout_lines"
+
+  - name: Setting SystemCtl Kernal Paramter for Linux Node
+    shell: |
+      cat <<EOF | sudo tee /etc/modules-load.d/k8s.conf
+      br_netfilter
+      EOF
+   
+      cat <<EOF | sudo tee /etc/sysctl.d/k8s.conf
+      net.bridge.bridge-nf-call-ip6tables = 1
+      net.bridge.bridge-nf-call-iptables = 1
+      EOF
+      sudo sysctl --system
+    tags: 
+      - clean_install
+
+  - name: Setup Required Repository For Kubernetes Cluster Deployment 
+    yum_repository:
+      name: "kubernetes_repo_{{ ansible_distribution_major_version }}"
+      description: "Kubernetes repo for version {{ ansible_distribution_major_version }}"
+      file: kubernetes
+      baseurl: "{{ base_urls }}"
+      gpgcheck: yes
+      gpgkey: "{{ gpg_keys }}"
+    tags: clean_install
+
+  - name: Pasting Docker Repo To Remote Hosts
+    template:
+      src: templates/docker-ce.repo.j2
+      dest: /etc/yum.repos.d/docker-ce.repo
+      owner: "{{ cluster_user }}"
+      group: "{{ cluster_user }}"
+    tags: clean_install
+    when: ansible_distribution == 'Ubuntu'
+
+  - name: Updating Repositories For Latest Packages
+    yum:
+      name: '*'
+      state: latest
+      exclude: kernel*
+    tags: clean_install
+
+  - name: Installing Packages For Kubernetes Setup
+    yum:
+      name: "{{ packages }}"
+      state: present 
+    vars:
+      packages:
+      - "docker-ce*"
+      - "kubelet"
+      - "kubeadm"
+    tags: 
+       - clean_install
+       - reinstalling_service
+
+  - name: Disabling Swap
+    shell: swapoff -a
+    tags:
+      - clean_install
+      - restarting_ser
+ 
+  - name: Starting Services Kubelet & Docker
+    systemd:
+      name: "{{ item }}"
+      state: started
+      enabled: yes
+      force: yes
+      daemon_reload: yes
+    loop:
+      - "docker"
+      - "kubelet"
+    tags:
+      - clean_install
+      - reinstalling_service
+ 
+  - name: Populate Service Facts
+    service_facts:
+    tags:
+      - clean_install
+      - restarting_ser
+
+  - name: Checking Service Status
+    debug: msg="{{ item }} is Running" 
+    loop:
+      - docker.service
+      - kubelet.service
+    tags: 
+      - clean_install
+      - restarting_ser
+    when: "ansible_facts.services['{{item}}'] is defined"
